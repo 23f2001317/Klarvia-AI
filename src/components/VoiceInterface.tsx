@@ -1,181 +1,121 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Mic, Volume2, X, Loader2 } from "lucide-react";
+import { useState, useRef } from "react";
+import { Mic, Loader2, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-interface VoiceInterfaceProps {
-  open: boolean;
-  onClose: () => void;
-}
-
-export default function VoiceInterface({ open, onClose }: VoiceInterfaceProps) {
+export default function VoiceInterface() {
   const [isListening, setIsListening] = useState(false);
-  const [userSpeech, setUserSpeech] = useState("");
-  const [aiResponse, setAiResponse] = useState("");
-  const [isThinking, setIsThinking] = useState(false);
+  const [userTranscript, setUserTranscript] = useState("");
+  const [klarviaResponse, setKlarviaResponse] = useState("");
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  // Initialize Speech Recognition
-  useEffect(() => {
-    if ("webkitSpeechRecognition" in window) {
-      const SpeechRecognition =
-        window.SpeechRecognition || window.webkitSpeechRecognition;
-      const recognition = new SpeechRecognition();
-      recognition.lang = "en-US";
-      recognition.continuous = false;
-      recognition.interimResults = false;
-
-      recognition.onstart = () => {
-        setIsListening(true);
-        setUserSpeech("");
-      };
-
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setUserSpeech(transcript);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-        if (userSpeech.trim() !== "") {
-          handleAIResponse(userSpeech);
-        }
-      };
-
-      recognitionRef.current = recognition;
-    } else {
-      console.warn("Speech recognition not supported in this browser.");
+  const handleStartListening = () => {
+    if (!("webkitSpeechRecognition" in window)) {
+      alert("Speech recognition not supported in this browser.");
+      return;
     }
-  }, [userSpeech]);
 
-  const handleMicClick = () => {
-    if (!recognitionRef.current) return;
+    const SpeechRecognition =
+      window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
 
-    if (isListening) {
-      recognitionRef.current.stop();
-    } else {
-      recognitionRef.current.start();
-      setAiResponse("");
-    }
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+
+    recognition.onstart = () => setIsListening(true);
+    recognition.onerror = (e) => {
+      console.error("Speech recognition error:", e);
+      setIsListening(false);
+    };
+    recognition.onend = () => setIsListening(false);
+
+    recognition.onresult = async (event: SpeechRecognitionEvent) => {
+      const transcript = event.results[0][0].transcript;
+      setUserTranscript(transcript);
+      setIsListening(false);
+      await sendToKlarvia(transcript);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
   };
 
-  const handleAIResponse = async (text: string) => {
-    setIsThinking(true);
+  const sendToKlarvia = async (message: string) => {
+    setKlarviaResponse("...");
     try {
-      const res = await fetch("/api/chat", {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ message }),
       });
-      const data = await res.json().catch(() => ({}));
-      const response =
-        (data && (data.reply || data.message)) ||
-        "Sorry, I couldn’t process that.";
-      setAiResponse(response);
-      speakResponse(response);
-    } catch (err) {
-      setAiResponse("Error connecting to AI.");
-    } finally {
-      setIsThinking(false);
+
+      const data = await response.json();
+      const reply = data.reply || "Klarvia couldn’t understand that.";
+      setKlarviaResponse(reply);
+      speakResponse(reply);
+    } catch (error) {
+      console.error("Error communicating with Klarvia:", error);
+      setKlarviaResponse("Error communicating with Klarvia.");
     }
   };
 
   const speakResponse = (text: string) => {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-US";
-    speechSynthesis.speak(utterance);
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "en-US";
+    synth.speak(utter);
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={onClose}
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0, y: 30 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.9, opacity: 0, y: 30 }}
-            transition={{ type: "spring", duration: 0.5 }}
-            className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl p-10 mx-auto flex flex-col items-center justify-center relative"
-            onClick={(e) => e.stopPropagation()}
+    <div className="flex flex-col items-center justify-center mt-8 space-y-8">
+      <h2 className="text-3xl font-semibold text-gray-800 flex items-center space-x-2">
+        <Mic className="text-indigo-600" />
+        <span>Talk with Klarvia</span>
+      </h2>
+
+      <div className="flex flex-col md:flex-row items-center justify-center gap-8">
+        {/* User Voice Input */}
+        <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 w-72 text-center shadow-md">
+          <h3 className="font-semibold text-indigo-700 mb-3">User Voice Input</h3>
+
+          <Button
+            onClick={handleStartListening}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full p-4 w-14 h-14 flex items-center justify-center mx-auto"
           >
-            <button
-              onClick={onClose}
-              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
-            >
-              <X size={24} />
-            </button>
+            {isListening ? (
+              <Loader2 className="h-6 w-6 animate-spin" />
+            ) : (
+              <Mic className="h-6 w-6" />
+            )}
+          </Button>
 
-            <h2 className="text-3xl font-bold text-gray-800 mb-10 text-center">
-              🎙️ Talk with Klarvia
-            </h2>
+          <p className="mt-4 text-sm text-gray-600">
+            {isListening
+              ? "Listening..."
+              : userTranscript
+              ? `"${userTranscript}"`
+              : "Tap to start speaking"}
+          </p>
+        </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 w-full">
-              {/* USER INPUT */}
-              <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-8 shadow-md flex flex-col items-center justify-center text-center space-y-6">
-                <h3 className="text-xl font-semibold text-indigo-700">
-                  User Voice Input
-                </h3>
+        {/* Klarvia's Response */}
+        <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 w-72 text-center shadow-md">
+          <h3 className="font-semibold text-gray-700 mb-3">Klarvia’s Response</h3>
 
-                <Button
-                  onClick={handleMicClick}
-                  className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                    isListening
-                      ? "bg-red-500 hover:bg-red-600"
-                      : "bg-indigo-600 hover:bg-indigo-700"
-                  } text-white shadow-lg transition-all`}
-                >
-                  {isListening ? (
-                    <Loader2 className="animate-spin" size={26} />
-                  ) : (
-                    <Mic size={26} />
-                  )}
-                </Button>
-                <p className="text-gray-600 text-base">
-                  {isListening ? "Listening..." : "Tap to start speaking"}
-                </p>
+          <div className="flex justify-center mb-3">
+            <Volume2 className="text-gray-500 h-6 w-6" />
+          </div>
 
-                {userSpeech && (
-                  <p className="text-gray-700 italic mt-4 px-3 text-sm">
-                    “{userSpeech}”
-                  </p>
-                )}
-              </div>
-
-              {/* AI RESPONSE */}
-              <div className="bg-gray-50 border border-gray-200 rounded-2xl p-8 shadow-md flex flex-col items-center justify-center text-center space-y-6">
-                <h3 className="text-xl font-semibold text-gray-700">
-                  Klarvia’s Response
-                </h3>
-
-                <Button
-                  disabled
-                  className="w-16 h-16 rounded-full bg-gray-400 text-white flex items-center justify-center cursor-not-allowed"
-                >
-                  <Volume2 size={26} />
-                </Button>
-
-                {isThinking ? (
-                  <p className="text-gray-600 text-base">Thinking...</p>
-                ) : aiResponse ? (
-                  <p className="text-gray-700 italic text-sm">“{aiResponse}”</p>
-                ) : (
-                  <p className="text-gray-600 text-base">
-                    Waiting for your voice input...
-                  </p>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          <p className="text-sm text-gray-600 min-h-[48px] transition-all">
+            {klarviaResponse
+              ? klarviaResponse
+              : "Waiting for your voice input..."}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
