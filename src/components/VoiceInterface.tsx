@@ -1,121 +1,130 @@
 "use client";
-
-import { useState, useRef } from "react";
-import { Mic, Loader2, Volume2 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect, useRef } from "react";
+import { Mic, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export default function VoiceInterface() {
+export default function VoiceInterface({ onClose }: { onClose: () => void }) {
   const [isListening, setIsListening] = useState(false);
-  const [userTranscript, setUserTranscript] = useState("");
-  const [klarviaResponse, setKlarviaResponse] = useState("");
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const [transcript, setTranscript] = useState("");
+  const [aiResponse, setAiResponse] = useState("");
+  const recognitionRef = useRef<any>(null);
 
-  const handleStartListening = () => {
-    if (!("webkitSpeechRecognition" in window)) {
-      alert("Speech recognition not supported in this browser.");
-      return;
+  // --- Voice recognition setup ---
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechRecognition =
+        (window as any).SpeechRecognition ||
+        (window as any).webkitSpeechRecognition;
+
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.lang = "en-US";
+        recognition.interimResults = false;
+        recognition.continuous = false;
+
+        recognition.onresult = (event: any) => {
+          const text = event.results[0][0].transcript;
+          setTranscript(text);
+          handleSendToAI(text);
+        };
+
+        recognition.onerror = (err: any) => {
+          console.error("Speech recognition error:", err);
+          setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+      }
     }
+  }, []);
 
-    const SpeechRecognition =
-      window.SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = "en-US";
-
-    recognition.onstart = () => setIsListening(true);
-    recognition.onerror = (e) => {
-      console.error("Speech recognition error:", e);
+  // --- Start / Stop Listening ---
+  const handleMicClick = () => {
+    if (!recognitionRef.current) return alert("Speech recognition not supported");
+    if (isListening) {
+      recognitionRef.current.stop();
       setIsListening(false);
-    };
-    recognition.onend = () => setIsListening(false);
-
-    recognition.onresult = async (event: SpeechRecognitionEvent) => {
-      const transcript = event.results[0][0].transcript;
-      setUserTranscript(transcript);
-      setIsListening(false);
-      await sendToKlarvia(transcript);
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
+    } else {
+      setTranscript("");
+      setAiResponse("");
+      setIsListening(true);
+      recognitionRef.current.start();
+    }
   };
 
-  const sendToKlarvia = async (message: string) => {
-    setKlarviaResponse("...");
+  // --- Send text to AI endpoint ---
+  const handleSendToAI = async (text: string) => {
+    setIsListening(false);
+    setAiResponse("Thinking...");
     try {
-      const response = await fetch("/api/chat", {
+      const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message: text }),
       });
-
-      const data = await response.json();
-      const reply = data.reply || "Klarvia couldn’t understand that.";
-      setKlarviaResponse(reply);
-      speakResponse(reply);
-    } catch (error) {
-      console.error("Error communicating with Klarvia:", error);
-      setKlarviaResponse("Error communicating with Klarvia.");
+      const data = await res.json();
+      setAiResponse(data.reply || "No response received.");
+    } catch (err) {
+      console.error("AI error:", err);
+      setAiResponse("Sorry, something went wrong.");
     }
-  };
-
-  const speakResponse = (text: string) => {
-    const synth = window.speechSynthesis;
-    if (!synth) return;
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "en-US";
-    synth.speak(utter);
   };
 
   return (
-    <div className="flex flex-col items-center justify-center mt-8 space-y-8">
-      <h2 className="text-3xl font-semibold text-gray-800 flex items-center space-x-2">
-        <Mic className="text-indigo-600" />
-        <span>Talk with Klarvia</span>
-      </h2>
-
-      <div className="flex flex-col md:flex-row items-center justify-center gap-8">
-        {/* User Voice Input */}
-        <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 w-72 text-center shadow-md">
-          <h3 className="font-semibold text-indigo-700 mb-3">User Voice Input</h3>
-
-          <Button
-            onClick={handleStartListening}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full p-4 w-14 h-14 flex items-center justify-center mx-auto"
+    <AnimatePresence>
+      <motion.div
+        className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      >
+        <motion.div
+          className="bg-gradient-to-b from-gray-900 to-gray-800 p-8 rounded-2xl shadow-2xl max-w-md w-full text-center border border-gray-700"
+          initial={{ scale: 0.9, opacity: 0, y: 30 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.9, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 120, damping: 12 }}
+        >
+          {/* Close Button */}
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 text-gray-400 hover:text-white"
           >
-            {isListening ? (
-              <Loader2 className="h-6 w-6 animate-spin" />
-            ) : (
-              <Mic className="h-6 w-6" />
-            )}
-          </Button>
+            <X size={22} />
+          </button>
 
-          <p className="mt-4 text-sm text-gray-600">
-            {isListening
-              ? "Listening..."
-              : userTranscript
-              ? `"${userTranscript}"`
-              : "Tap to start speaking"}
-          </p>
-        </div>
+          <h2 className="text-2xl font-semibold mb-4">Talk to Klarvia</h2>
 
-        {/* Klarvia's Response */}
-        <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 w-72 text-center shadow-md">
-          <h3 className="font-semibold text-gray-700 mb-3">Klarvia’s Response</h3>
-
-          <div className="flex justify-center mb-3">
-            <Volume2 className="text-gray-500 h-6 w-6" />
+          {/* Mic Button */}
+          <div className="flex justify-center my-6">
+            <Button
+              onClick={handleMicClick}
+              className={`rounded-full p-6 transition-all ${
+                isListening ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"
+              }`}
+            >
+              {isListening ? <Loader2 className="animate-spin" /> : <Mic size={32} />}
+            </Button>
           </div>
 
-          <p className="text-sm text-gray-600 min-h-[48px] transition-all">
-            {klarviaResponse
-              ? klarviaResponse
-              : "Waiting for your voice input..."}
-          </p>
-        </div>
-      </div>
-    </div>
+          {/* Transcript */}
+          {transcript && (
+            <p className="text-gray-300 mt-3 italic">You said: “{transcript}”</p>
+          )}
+
+          {/* AI Response */}
+          {aiResponse && (
+            <motion.div
+              className="mt-4 bg-gray-900/60 p-4 rounded-xl text-gray-200"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <p>{aiResponse}</p>
+            </motion.div>
+          )}
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
