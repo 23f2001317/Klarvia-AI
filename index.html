@@ -24,5 +24,83 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Lightweight WS connectivity check with console logs.
+      // Set DEBUG_WS_PROBE=true in localStorage to enable probe.
+      (function () {
+        const DEBUG_WS_PROBE = localStorage.getItem('DEBUG_WS_PROBE') === 'true';
+        if (!DEBUG_WS_PROBE) {
+          return; // keep silent by default to avoid spurious no-speech logs
+        }
+        // Optional: Add token for authentication (set WS_AUTH_TOKEN env var on backend)
+        const WS_TOKEN = 'test123'; // Change this to match your backend WS_AUTH_TOKEN
+        const baseUrl = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+          ? 'ws://localhost:8001/ws/audio'
+          : `ws://${location.host.replace(/:.*/, '')}:8001/ws/audio`;
+        const WS_URL = WS_TOKEN ? `${baseUrl}?token=${encodeURIComponent(WS_TOKEN)}` : baseUrl;
+
+        try {
+          const ws = new WebSocket(WS_URL);
+          ws.binaryType = 'arraybuffer';
+
+          ws.onopen = () => {
+            console.log('[ws] Connected');
+            // Send a tiny silent WAV header + a couple frames to exercise the pipeline
+            const sampleRate = 16000;
+            const seconds = 0.05;
+            const n = Math.max(1, Math.floor(sampleRate * seconds));
+            const bytes = new ArrayBuffer(44 + n * 2);
+            const view = new DataView(bytes);
+            // WAV header (16-bit PCM mono)
+            function writeString(offset, s) { for (let i=0; i<s.length; i++) view.setUint8(offset+i, s.charCodeAt(i)); }
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + n*2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate*2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(36, 'data');
+            view.setUint32(40, n*2, true);
+            // data section already zeroed (silence)
+
+            // base64-encode and send
+            const b64 = btoa(String.fromCharCode(...new Uint8Array(bytes)));
+            console.log('[ws] Sending audio chunk');
+            ws.send(b64);
+          };
+
+          ws.onmessage = (evt) => {
+            if (typeof evt.data === 'string') {
+              console.log('[ws] text:', evt.data);
+              return;
+            }
+            console.log('[ws] Received response audio');
+            // Optional: play the audio
+            try {
+              const blob = new Blob([evt.data], { type: 'audio/wav' });
+              const url = URL.createObjectURL(blob);
+              const a = new Audio(url);
+              a.play().catch(() => {});
+            } catch {}
+          };
+
+          ws.onerror = (err) => console.log('[ws] error', err);
+          ws.onclose = (evt) => {
+            if (evt.code === 1008) {
+              console.log('[ws] closed: Unauthorized (invalid or missing token)');
+            } else {
+              console.log('[ws] closed: code=' + evt.code + ', reason=' + (evt.reason || 'none'));
+            }
+          };
+        } catch (e) {
+          console.log('[ws] failed to create WebSocket', e);
+        }
+      })();
+    </script>
   </body>
 </html>

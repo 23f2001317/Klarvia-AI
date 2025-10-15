@@ -5,6 +5,8 @@ import { pool } from "./db";
 import routes from "./routes";
 import authRoutes from "./authRoutes";
 import dbInspectorRoutes from "./dbInspectorRoutes";
+import conversationsRoutes from "./conversationsRoutes";
+import wsConfigRoute from "./wsConfigRoute";
 import cookieParser from "cookie-parser";
 
 dotenv.config();
@@ -16,6 +18,8 @@ app.use(cookieParser());
 app.use("/api", routes);
 app.use("/api/auth", authRoutes);
 app.use("/api/db-inspector", dbInspectorRoutes);
+app.use("/api/conversations", conversationsRoutes);
+app.use("/api/ws-config", wsConfigRoute);
 
 // Proxy /api/chat to the Python AI service to keep a single API surface
 const AI_CHAT_URL = process.env.AI_CHAT_URL || "http://127.0.0.1:8001/chat";

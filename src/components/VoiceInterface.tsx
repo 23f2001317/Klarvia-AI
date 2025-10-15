@@ -16,8 +16,9 @@ export default function VoiceInterface({ open, onClose }: VoiceInterfaceProps) {
   const [aiResponse, setAiResponse] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const latestTranscriptRef = useRef<string>("");
 
-  // Initialize Speech Recognition
+  // Initialize Speech Recognition once
   useEffect(() => {
     if ("webkitSpeechRecognition" in window) {
       const SpeechRecognition =
@@ -25,22 +26,45 @@ export default function VoiceInterface({ open, onClose }: VoiceInterfaceProps) {
       const recognition = new SpeechRecognition();
       recognition.lang = "en-US";
       recognition.continuous = false;
-      recognition.interimResults = false;
+      recognition.interimResults = true;
 
       recognition.onstart = () => {
+        console.log("[voice] Recognition started");
         setIsListening(true);
         setUserSpeech("");
+        latestTranscriptRef.current = "";
       };
 
       recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
+        let transcript = "";
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        console.log("[voice] Transcript:", transcript);
+        latestTranscriptRef.current = transcript;
         setUserSpeech(transcript);
       };
 
       recognition.onend = () => {
+        console.log("[voice] Recognition ended");
         setIsListening(false);
-        if (userSpeech.trim() !== "") {
-          handleAIResponse(userSpeech);
+        const finalTranscript = latestTranscriptRef.current.trim();
+        if (finalTranscript !== "") {
+          handleAIResponse(finalTranscript);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.error("[voice] Recognition error:", event.error);
+        setIsListening(false);
+        if (event.error === "no-speech") {
+          setUserSpeech("No speech detected. Please try again.");
+        } else if (event.error === "network") {
+          setUserSpeech("Network error. Web Speech API requires internet connection to Google. Try the WebSocket version instead (ws-voice-demo.html) or check your internet connection.");
+        } else if (event.error === "not-allowed" || event.error === "permission-denied") {
+          setUserSpeech("Microphone access denied. Please allow microphone permissions in your browser settings.");
+        } else {
+          setUserSpeech(`Error: ${event.error}`);
         }
       };
 
@@ -48,7 +72,14 @@ export default function VoiceInterface({ open, onClose }: VoiceInterfaceProps) {
     } else {
       console.warn("Speech recognition not supported in this browser.");
     }
-  }, [userSpeech]);
+
+    // Cleanup on unmount
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
+  }, []); // Empty dependency array - initialize once
 
   const handleMicClick = () => {
     if (!recognitionRef.current) return;

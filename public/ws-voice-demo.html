@@ -1,0 +1,209 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Klarvia WS Voice Demo</title>
+    <style>
+      body { font-family: system-ui, Arial, sans-serif; margin: 24px; }
+      .row { display: flex; gap: 12px; align-items: center; margin: 12px 0; }
+      button { padding: 10px 14px; font-size: 14px; }
+      #status { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      audio { display: block; margin-top: 16px; }
+      .log { white-space: pre-wrap; background: #f6f8fa; padding: 10px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <h1>WebSocket Voice Demo</h1>
+    <p>This page records your mic to a WAV blob on stop, sends it to ws://localhost:8001/ws/audio, and auto-plays the AI reply audio.</p>
+
+    <div class="row">
+      <label for="token">Token:</label>
+      <input id="token" type="text" placeholder="Enter WS_AUTH_TOKEN" value="test123" style="padding: 8px; flex: 1; max-width: 300px;" />
+    </div>
+
+    <div class="row">
+      <button id="start">Start</button>
+      <button id="stop" disabled>Stop</button>
+      <span id="status">idle</span>
+    </div>
+
+    <audio id="player" controls></audio>
+
+    <h3>Logs</h3>
+    <div id="log" class="log"></div>
+
+    <script>
+      const statusEl = document.getElementById('status');
+      const logEl = document.getElementById('log');
+      const startBtn = document.getElementById('start');
+      const stopBtn = document.getElementById('stop');
+      const player = document.getElementById('player');
+
+      let mediaRecorder = null;
+      let chunks = [];
+      let ws = null;
+
+      function log(msg) {
+        console.log('[demo]', msg);
+        logEl.textContent += `\n${new Date().toLocaleTimeString()} ${msg}`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      async function start() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaRecorder = new MediaRecorder(stream);
+          chunks = [];
+
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) chunks.push(e.data);
+          };
+          mediaRecorder.onstart = () => {
+            statusEl.textContent = 'recording…';
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            log('Recording started');
+          };
+          mediaRecorder.onstop = async () => {
+            statusEl.textContent = 'encoding…';
+            const blob = new Blob(chunks, { type: 'audio/webm' });
+            const arrayBuffer = await blob.arrayBuffer();
+            const wavBuffer = await encodeWav(new Float32Array(await decodeToPCM(arrayBuffer)), 16000);
+
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+              const token = document.getElementById('token').value.trim();
+              const wsUrl = token 
+                ? `ws://localhost:8001/ws/audio?token=${encodeURIComponent(token)}`
+                : 'ws://localhost:8001/ws/audio';
+              ws = new WebSocket(wsUrl);
+              await new Promise((resolve, reject) => {
+                ws.onopen = () => { log('WebSocket connected'); resolve(); };
+                ws.onerror = (e) => reject(e);
+                ws.onclose = (e) => { 
+                  if (e.code === 1008) {
+                    log('WebSocket closed: Unauthorized (invalid or missing token)');
+                  } else {
+                    log(`WebSocket closed: code=${e.code}, reason=${e.reason || 'none'}`);
+                  }
+                };
+              });
+            }
+
+            // Send base64-encoded WAV to the server
+            const b64 = arrayBufferToBase64(wavBuffer);
+            console.log('Sending audio', wavBuffer.byteLength, 'bytes');
+            ws.send(b64);
+            log(`Sending audio: ${wavBuffer.byteLength} bytes (WAV b64)`);
+
+            ws.onmessage = (event) => {
+              if (typeof event.data === 'string') {
+                log('text: ' + event.data);
+                return;
+              }
+              console.log('Received audio', event.data.size || 0, 'bytes');
+              const audioBlob = new Blob([event.data], { type: 'audio/wav' });
+              const url = URL.createObjectURL(audioBlob);
+              player.src = url;
+              player.play();
+              statusEl.textContent = 'played reply';
+              log(`Received audio: ${event.data.size || 0} bytes; playing…`);
+            };
+
+            statusEl.textContent = 'waiting reply…';
+          };
+
+          mediaRecorder.start();
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = 'error';
+          log('Error: ' + (err && err.message || err));
+        }
+      }
+
+      function stop() {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+          statusEl.textContent = 'stopped';
+          log('Recording stopped');
+        }
+      }
+
+      // Helpers: convert recorded webm -> PCM -> WAV
+      async function decodeToPCM(arrayBuffer) {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        const channelData = audioBuffer.getChannelData(0); // mono
+        // resample to 16kHz
+        const targetRate = 16000;
+        const offlineCtx = new OfflineAudioContext(1, Math.ceil(channelData.length * targetRate / audioBuffer.sampleRate), targetRate);
+        const buffer = offlineCtx.createBuffer(1, audioBuffer.length, audioBuffer.sampleRate);
+        buffer.copyToChannel(channelData, 0);
+        const source = offlineCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(offlineCtx.destination);
+        source.start();
+        const resampled = await offlineCtx.startRendering();
+        return resampled.getChannelData(0).buffer;
+      }
+
+      function encodeWav(float32Array, sampleRate) {
+        const numChannels = 1;
+        const bitsPerSample = 16;
+        const blockAlign = numChannels * bitsPerSample / 8;
+        const byteRate = sampleRate * blockAlign;
+        const dataLength = float32Array.length * 2;
+        const buffer = new ArrayBuffer(44 + dataLength);
+        const view = new DataView(buffer);
+
+        // WAV header
+        writeString(view, 0, 'RIFF');
+        view.setUint32(4, 36 + dataLength, true);
+        writeString(view, 8, 'WAVE');
+        writeString(view, 12, 'fmt ');
+        view.setUint32(16, 16, true); // PCM chunk size
+        view.setUint16(20, 1, true);  // audio format = PCM
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, byteRate, true);
+        view.setUint16(32, blockAlign, true);
+        view.setUint16(34, bitsPerSample, true);
+        writeString(view, 36, 'data');
+        view.setUint32(40, dataLength, true);
+
+        // PCM data
+        floatTo16BitPCM(view, 44, float32Array);
+        return buffer;
+      }
+
+      function floatTo16BitPCM(view, offset, input) {
+        for (let i = 0; i < input.length; i++, offset += 2) {
+          let s = Math.max(-1, Math.min(1, input[i]));
+          view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        }
+      }
+
+      function writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      }
+
+      function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, i + chunkSize);
+          binary += String.fromCharCode.apply(null, chunk);
+        }
+        return btoa(binary);
+      }
+
+      startBtn.addEventListener('click', start);
+      stopBtn.addEventListener('click', stop);
+    </script>
+  </body>
+</html>

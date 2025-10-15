@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Interface Test - Klarvia</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .status {
+            background: #f0f4ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .status.listening {
+            background: #fff4e6;
+            border-left-color: #ff9800;
+        }
+        .status.thinking {
+            background: #e8f5e9;
+            border-left-color: #4caf50;
+        }
+        .status.speaking {
+            background: #e3f2fd;
+            border-left-color: #2196f3;
+        }
+        .status.error {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 30px 0;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+        .btn-danger:hover:not(:disabled) {
+            background: #da190b;
+        }
+        .transcript-box {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            min-height: 100px;
+            margin: 20px 0;
+        }
+        .transcript-box h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .transcript-box p {
+            color: #333;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        .transcript-box p.empty {
+            color: #999;
+            font-style: italic;
+        }
+        .logs {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border-radius: 10px;
+            padding: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin-top: 20px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px 0;
+        }
+        .log-entry.info {
+            color: #4fc3f7;
+        }
+        .log-entry.success {
+            color: #81c784;
+        }
+        .log-entry.error {
+            color: #e57373;
+        }
+        .log-entry.warning {
+            color: #ffb74d;
+        }
+        .mic-indicator {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: #667eea;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px auto;
+            transition: all 0.3s;
+        }
+        .mic-indicator.active {
+            background: #ff9800;
+            animation: pulse 1.5s infinite;
+        }
+        .mic-indicator svg {
+            width: 40px;
+            height: 40px;
+            fill: white;
+        }
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.7);
+            }
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 0 0 20px rgba(255, 152, 0, 0);
+            }
+        }
+        .test-info {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .test-info h3 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        .test-info ol {
+            margin-left: 20px;
+            color: #856404;
+        }
+        .test-info ol li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Voice Interface Test</h1>
+        <p class="subtitle">Test the fixed voice-to-text-to-AI-to-voice pipeline</p>
+
+        <div class="test-info">
+            <h3>📋 Test Instructions</h3>
+            <ol>
+                <li>Click "Start Listening" button</li>
+                <li>Allow microphone access when prompted</li>
+                <li>Speak clearly: "Hello, how are you?"</li>
+                <li>Wait for mic to stop automatically (2-3 seconds of silence)</li>
+                <li>Check that transcript appears below</li>
+                <li>Verify AI response is shown and spoken</li>
+            </ol>
+        </div>
+
+        <div id="status" class="status">
+            <strong>Status:</strong> <span id="statusText">Ready to start</span>
+        </div>
+
+        <div class="mic-indicator" id="micIndicator">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+            </svg>
+        </div>
+
+        <div class="controls">
+            <button id="startBtn" class="btn-primary">Start Listening</button>
+            <button id="stopBtn" class="btn-danger" disabled>Stop Listening</button>
+        </div>
+
+        <div class="transcript-box">
+            <h3>Your Speech</h3>
+            <p id="userTranscript" class="empty">Waiting for input...</p>
+        </div>
+
+        <div class="transcript-box">
+            <h3>AI Response</h3>
+            <p id="aiResponse" class="empty">Waiting for your input...</p>
+        </div>
+
+        <div class="logs" id="logs"></div>
+    </div>
+
+    <script>
+        let recognition = null;
+        let latestTranscript = '';
+        const API_URL = '/api/chat';
+
+        // DOM elements
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusEl = document.getElementById('status');
+        const statusText = document.getElementById('statusText');
+        const userTranscript = document.getElementById('userTranscript');
+        const aiResponse = document.getElementById('aiResponse');
+        const logs = document.getElementById('logs');
+        const micIndicator = document.getElementById('micIndicator');
+
+        // Logging
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logs.appendChild(entry);
+            logs.scrollTop = logs.scrollHeight;
+            console.log(`[voice-test] ${message}`);
+        }
+
+        // Status updates
+        function setStatus(message, type = '') {
+            statusText.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+
+        // Initialize Speech Recognition
+        function initRecognition() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                log('Speech recognition not supported in this browser!', 'error');
+                setStatus('Speech recognition not supported!', 'error');
+                startBtn.disabled = true;
+                return false;
+            }
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'en-US';
+            recognition.continuous = false;
+            recognition.interimResults = true;
+
+            recognition.onstart = () => {
+                log('Recognition started', 'success');
+                setStatus('Listening... Speak now!', 'listening');
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                micIndicator.classList.add('active');
+                latestTranscript = '';
+                userTranscript.textContent = 'Listening...';
+                userTranscript.className = 'empty';
+            };
+
+            recognition.onresult = (event) => {
+                let transcript = '';
+                for (let i = 0; i < event.results.length; i++) {
+                    transcript += event.results[i][0].transcript;
+                }
+                latestTranscript = transcript;
+                userTranscript.textContent = transcript;
+                userTranscript.className = '';
+                log(`Transcript: "${transcript}"`, 'info');
+            };
+
+            recognition.onend = () => {
+                log('Recognition ended', 'success');
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                micIndicator.classList.remove('active');
+                
+                if (latestTranscript.trim()) {
+                    setStatus('Processing with AI...', 'thinking');
+                    sendToAI(latestTranscript);
+                } else {
+                    setStatus('No speech detected. Try again.', 'warning');
+                    userTranscript.textContent = 'No speech detected';
+                    userTranscript.className = 'empty';
+                }
+            };
+
+            recognition.onerror = (event) => {
+                log(`Recognition error: ${event.error}`, 'error');
+                setStatus(`Error: ${event.error}`, 'error');
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                micIndicator.classList.remove('active');
+            };
+
+            log('Speech recognition initialized', 'success');
+            return true;
+        }
+
+        // Send to AI
+        async function sendToAI(text) {
+            log(`Sending to AI: "${text}"`, 'info');
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const reply = data.reply || data.message || 'No response from AI';
+                
+                log(`AI Response: "${reply}"`, 'success');
+                aiResponse.textContent = reply;
+                aiResponse.className = '';
+                setStatus('Speaking response...', 'speaking');
+                
+                speakResponse(reply);
+            } catch (error) {
+                log(`Error: ${error.message}`, 'error');
+                setStatus('Error connecting to AI', 'error');
+                aiResponse.textContent = `Error: ${error.message}`;
+                aiResponse.className = 'empty';
+            }
+        }
+
+        // Speak response
+        function speakResponse(text) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            
+            utterance.onstart = () => {
+                log('Speaking response...', 'info');
+            };
+            
+            utterance.onend = () => {
+                log('Finished speaking', 'success');
+                setStatus('Ready for next conversation', '');
+            };
+            
+            utterance.onerror = (event) => {
+                log(`Speech synthesis error: ${event.error}`, 'error');
+                setStatus('Error speaking response', 'error');
+            };
+            
+            speechSynthesis.speak(utterance);
+        }
+
+        // Button handlers
+        startBtn.addEventListener('click', () => {
+            if (!recognition && !initRecognition()) {
+                return;
+            }
+            try {
+                recognition.start();
+            } catch (error) {
+                log(`Error starting recognition: ${error.message}`, 'error');
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            if (recognition) {
+                recognition.stop();
+                log('Manually stopped', 'warning');
+            }
+        });
+
+        // Initialize on load
+        log('Test page loaded', 'success');
+        setStatus('Ready to start - Click "Start Listening"', '');
+        
+        // Check if backend is available
+        fetch('/api/health')
+            .then(res => res.json())
+            .then(() => {
+                log('Backend connection OK', 'success');
+            })
+            .catch(() => {
+                log('Warning: Backend may not be running', 'warning');
+            });
+    </script>
+</body>
+</html>
