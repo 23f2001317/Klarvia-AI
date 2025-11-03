@@ -27,7 +27,6 @@ async def text_to_speech(text: str) -> bytes:
             import os as _os
 
             engine = pyttsx3.init()
-            # pyttsx3 can save to file via drivers; we use a temp file
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 tmp_path = f.name
             engine.save_to_file(text, tmp_path)
@@ -42,9 +41,7 @@ async def text_to_speech(text: str) -> bytes:
             return data
         except Exception as e:
             logger.warning("pyttsx3 TTS failed: %s", e)
-            # fallthrough to fallback
 
-    # fallback: return a 0.5 second silent WAV using soundfile
     try:
         import io
         import soundfile as sf

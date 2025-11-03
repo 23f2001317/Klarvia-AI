@@ -1,15 +1,11 @@
 fastapi
 uvicorn[standard]
 pydantic
-# WebSocket support and env loader
+
 websockets
 python-dotenv
 
-# Audio / STT / TTS
+
 soundfile
 pyttsx3
 openai-whisper
-# Optional backends (enable as needed)
-# transformers
-# torch
-# unsloth

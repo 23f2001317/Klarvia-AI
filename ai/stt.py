@@ -18,7 +18,7 @@ import numpy as np
 
 logger = logging.getLogger("ai.stt")
 
-_whisper_model = None  # Lazy-loaded singleton
+_whisper_model = None
 
 
 def _get_whisper_model():
@@ -26,8 +26,7 @@ def _get_whisper_model():
     global _whisper_model
     if _whisper_model is not None:
         return _whisper_model
-    # Lazy import so module import stays fast
-    import whisper  # type: ignore
+    import whisper
 
     model_name = os.environ.get("WHISPER_MODEL", "base")
     logger.info("Loading Whisper model: %s", model_name)
@@ -43,19 +42,17 @@ def _decode_wav_to_16k_mono_float32(data: bytes) -> Optional[np.ndarray]:
     Returns None on failure.
     """
     try:
-        import soundfile as sf  # type: ignore
+        import soundfile as sf
 
         with io.BytesIO(data) as bio:
             audio, sr = sf.read(bio, dtype="float32", always_2d=True)
-        # audio shape: (n_samples, n_channels)
         if audio.ndim == 2 and audio.shape[1] > 1:
-            audio = np.mean(audio, axis=1)  # downmix to mono
+            audio = np.mean(audio, axis=1)
         else:
             audio = audio.reshape(-1)
 
         target_sr = 16000
         if sr != target_sr:
-            # Simple linear resample to 16kHz
             x = np.arange(len(audio), dtype=np.float64)
             new_len = int(round(len(audio) * (target_sr / float(sr))))
             xp = np.linspace(0, len(audio) - 1, num=new_len, dtype=np.float64)
@@ -78,14 +75,12 @@ async def transcribe_audio(audio_bytes: bytes) -> str:
 
     def _do_transcribe(data: bytes) -> str:
         try:
-            # Decode bytes to 16kHz mono float32 PCM
             audio = _decode_wav_to_16k_mono_float32(data)
             if audio is None or audio.size == 0:
                 logger.warning("STT: empty or undecodable audio")
                 return ""
 
             model = _get_whisper_model()
-            # Pass numpy audio directly (avoids ffmpeg)
             result = model.transcribe(audio, fp16=False)
             raw_text = result.get("text")
             text = raw_text.strip() if isinstance(raw_text, str) else ""
@@ -95,5 +90,4 @@ async def transcribe_audio(audio_bytes: bytes) -> str:
             logger.exception("STT error: %s", e)
             return ""
 
-    # Run the blocking part in a background thread
     return await asyncio.to_thread(_do_transcribe, audio_bytes)

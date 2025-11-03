@@ -18,7 +18,6 @@ from .tts import text_to_speech
 import os
 import json
 
-# Load environment variables from project root .env automatically
 load_dotenv()
 
 
@@ -79,7 +78,6 @@ async def ws_audio(websocket: WebSocket):
     Set WS_AUTH_TOKEN environment variable to enable token verification.
     If WS_AUTH_TOKEN is not set, accepts all connections (dev mode).
     """
-    # Token-based authentication
     expected_token = os.environ.get("WS_AUTH_TOKEN")
     if expected_token:
         query_params = dict(websocket.query_params)
@@ -93,7 +91,6 @@ async def ws_audio(websocket: WebSocket):
     logger.info("/ws/audio connected")
     try:
         while True:
-            # Receive base64-encoded audio chunk from the client
             b64_chunk = await websocket.receive_text()
             if not b64_chunk:
                 continue
@@ -108,26 +105,21 @@ async def ws_audio(websocket: WebSocket):
 
             logger.info("[ws] Received audio (%d bytes)", len(audio_bytes))
             
-            # STT (async)
             text = await transcribe_audio(audio_bytes)
             if not text:
                 await websocket.send_text("status: no-speech")
                 continue
             logger.info("[ws] Transcribed text: %s", text)
-            # Send transcript JSON for client-side UX/logging
             try:
                 await websocket.send_text(json.dumps({
                     "type": "transcript",
                     "transcript": text,
                 }))
             except Exception:
-                # Non-fatal if client can't parse JSON
                 pass
 
-            # Model (sync CPU-bound; consider to_thread if heavy)
             reply_text = await asyncio.to_thread(get_reply, text)
             logger.info("[ws] Predicted reply: %s", reply_text)
-            # Send reply JSON for client-side UX/logging prior to audio bytes
             try:
                 await websocket.send_text(json.dumps({
                     "type": "reply",
@@ -136,13 +128,11 @@ async def ws_audio(websocket: WebSocket):
             except Exception:
                 pass
 
-            # TTS (async)
             audio_out = await text_to_speech(reply_text)
             if not audio_out:
                 await websocket.send_text("error: tts-failed")
                 continue
 
-            # Send raw audio bytes back; frontend will create a Blob
             await websocket.send_bytes(audio_out)
             logger.info("[ws] Sent audio (%d bytes)", len(audio_out))
 
