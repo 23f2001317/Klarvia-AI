@@ -1,3 +1,2 @@
-// Re-export the WebSocket-based VoiceInterface to avoid Web Speech API dependency
-// and ensure offline/local operation for Klarvia voice interactions.
-export { default } from "@/components/VoiceInterfaceWebSocket";
+// Re-export the HTTP upload-based Voice Interface for simpler end-to-end setup.
+export { default } from "@/components/VoiceInterfaceHttp";

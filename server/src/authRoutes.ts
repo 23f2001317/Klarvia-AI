@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 import { createUser, findUserByEmail, verifyPassword, signToken, authMiddleware, findUserById, createPasswordResetToken, verifyPasswordResetToken, updateUserPassword } from "./auth";
 import { sendPasswordResetEmail } from "./email";
@@ -41,10 +42,26 @@ router.post("/login", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/me", authMiddleware, async (req: Request, res: Response) => {
-  const user_id = (req as any).user_id as string;
-  const user = await findUserById(user_id);
-  res.json({ user });
+// Return current user if token valid; otherwise return { user: null } (avoid 401 browser errors)
+router.get("/me", async (req: Request, res: Response) => {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith("Bearer ")) {
+      return res.json({ user: null });
+    }
+    const token = auth.slice("Bearer ".length);
+    try {
+      // Verify token using same secret as auth middleware
+      const decoded = jwt.verify(token, (process.env.JWT_SECRET as string) || "dev_secret_change_me") as { user_id: string };
+      const user = await findUserById(decoded.user_id);
+      return res.json({ user });
+    } catch (e) {
+      return res.json({ user: null });
+    }
+  } catch (e: any) {
+    console.error("/auth/me error:", e);
+    return res.status(500).json({ error: "internal error" });
+  }
 });
 
 // Route to request a password reset

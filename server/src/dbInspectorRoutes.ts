@@ -16,7 +16,7 @@ router.get("/tables", async (req: Request, res: Response) => {
       WHERE table_schema = 'public' 
       ORDER BY table_name
     `);
-    res.json({ tables: rows.map((r) => r.table_name) });
+  res.json({ tables: rows.map((r: any) => r.table_name) });
   } catch (e: any) {
     console.error("Failed to fetch tables:", e);
     res.status(500).json({ error: e?.message || "Failed to fetch tables" });

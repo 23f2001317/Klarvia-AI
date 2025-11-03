@@ -1,0 +1,9 @@
+openai>=1.40.0
+assemblyai>=0.33.0
+elevenlabs>=1.5.0
+python-dotenv>=1.0.0
+sounddevice>=0.4.6
+numpy>=1.26.0
+playsound==1.2.2
+pydub>=0.25.1
+wavio>=0.0.7
